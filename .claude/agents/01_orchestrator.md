@@ -47,7 +47,7 @@ Todos los agentes especializados ya existen como archivos en `.claude/agents/`. 
 
 ```
 Domain          → app/domain/**                                      → domain-engineer (03)
-Backend         → app/application/**, app/presentation/**             → backend-engineer (04)
+Backend         → app/application/**, app/presentation/** (incluye scheduler) → backend-engineer (04)
 LinkedIn        → app/infrastructure/linkedin/**                      → linkedin-agent (05)
 LLM             → app/infrastructure/llm/**, prompts/**                → llm-agent (06)
 CV Matching     → app/application/cv/**, app/infrastructure/cv/**, cvs/** → cv-matching-agent (07)
@@ -59,7 +59,10 @@ Architect       → docs/architecture/**, docs/decisions/**              → arc
 Security        → revisión transversal de todo el repo                 → security-agent (12)
 Code Review     → gate final de calidad                                → code-reviewer (13)
 Token/costo LLM → transversal sobre app/infrastructure/llm/**, prompts/** → token-optimization-agent (14)
+Tooling de repo → Dockerfile, docker-compose.yml, .github/workflows/**, pyproject.toml → tú mismo (orchestrator) — sin agente de capa dedicado, ver ENGINEERING_STANDARDS.md §31
 ```
+
+`ROADMAP.md` ya trae, fase por fase, qué agente ejecuta cada una en el orden recomendado — úsalo como plan de ejecución por defecto para features nuevas de scraping/análisis/matching/email/Gmail, en vez de rederivar el orden desde cero.
 
 ## Principios centrales (aplican a ti y a cualquier agente que delegues)
 

@@ -271,6 +271,7 @@ app/presentation/**
 * Request validation.
 * Response mapping.
 * Application-level orchestration.
+* Scheduled jobs (`app/presentation/scheduler/**`) — a scheduler is another entry point driven by time instead of HTTP, invoking existing use cases (e.g. the daily `CollectFeedPosts → AnalyzeJobPost → SelectCV → GenerateApplicationEmail` run). It must never call external providers directly nor duplicate use-case logic; never create Gmail drafts or send automatically from the scheduler without going through the manual review flow, unless the user explicitly decides otherwise.
 
 ## Example Use Cases
 
@@ -791,6 +792,7 @@ Domain Agent
 Backend Agent
 → app/application/**
 → app/presentation/**
+→ app/presentation/scheduler/** (scheduled jobs)
 
 LinkedIn Agent
 → app/infrastructure/linkedin/**
@@ -824,6 +826,9 @@ Architect
 Token Optimization Agent
 → app/infrastructure/llm/** (shared with LLM Agent, cross-cutting concern)
 → prompts/** (shared with LLM Agent, cross-cutting concern)
+
+Orchestrator
+→ Dockerfile, docker-compose.yml, .github/workflows/**, pyproject.toml (repo-level tooling that doesn't belong to a single architecture layer — no dedicated agent for this by design, see section 31 "No Overengineering")
 ```
 
 An agent should not modify another agent's ownership area without a documented reason. The Token Optimization Agent is the one deliberate exception: it works inside the LLM Agent's ownership by design (see section 36), and must coordinate with it rather than override it silently.

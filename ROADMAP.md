@@ -1,96 +1,115 @@
 # Roadmap — linkedin-job-application-automation
 
-Cada fase tiene un entregable verificable ("Done cuando..."). No pasar a la siguiente fase sin poder demostrar la anterior funcionando. Ver arquitectura completa en [`CLAUDE.md`](./CLAUDE.md).
+Cada fase tiene un entregable verificable ("Done cuando...") y un agente responsable (ver [`docs/agents/AGENTS.md`](./docs/agents/AGENTS.md) y [`.claude/agents/`](./.claude/agents/)). No pasar a la siguiente fase sin poder demostrar la anterior funcionando. Ver arquitectura completa en [`CLAUDE.md`](./CLAUDE.md) y [`ENGINEERING_STANDARDS.md`](./ENGINEERING_STANDARDS.md) — las rutas de esta guía usan la estructura por capas (`domain/application/infrastructure/presentation`), no la estructura plana de versiones anteriores de este documento.
+
+Transversal a **todas** las fases (no tienen fase propia):
+
+* `testing-agent` — agrega/revisa tests en cada fase, no solo en la 10.
+* `code-reviewer` — cada agente lo invoca al terminar su parte (ya configurado en cada `.claude/agents/*.md`).
+* `security-agent` — especialmente en Fase 2 (credenciales LinkedIn) y Fase 7 (OAuth Gmail).
+* `token-optimization-agent` — relevante desde la Fase 3 en adelante, una vez hay llamadas reales al LLM.
 
 ---
 
 ## Fase 0 — Setup del proyecto
 
-1. Crear estructura de carpetas base (`app/`, `cvs/`, `tests/`, `config/`).
-2. Inicializar `pyproject.toml` o `requirements.txt` con: `fastapi`, `uvicorn`, `sqlalchemy`, `psycopg2-binary` (o `asyncpg`), `alembic`, `playwright`, `pydantic`, `pydantic-settings`, `python-dotenv`, `pyyaml`, `pytest`, `httpx`.
-3. Crear `.env.example` con variables necesarias (ver Fase 1) y `.env` real (gitignored).
-4. Crear `.gitignore` (incluir `.env`, `data/`, `__pycache__`, `*.pdf` si los CVs son sensibles, `credentials.json`, `token.json`).
-5. `docker-compose.yml` con un servicio `postgres` (para no instalar Postgres localmente).
-6. Playwright: `playwright install chromium`.
+**Agente:** `architect` (define el skeleton de capas) → `orchestrator` (resto del setup).
 
-**Done cuando:** `docker-compose up -d postgres` levanta la base y `python -c "import fastapi, playwright, sqlalchemy"` no falla.
+1. Crear el skeleton de Clean Architecture: `app/domain/`, `app/application/`, `app/infrastructure/`, `app/presentation/`, `tests/{unit,integration,e2e}/`, `prompts/`, `cvs/`, `migrations/`, `docs/{architecture,decisions}/` (ver estructura completa en `ENGINEERING_STANDARDS.md` §26).
+2. Inicializar `pyproject.toml` con: `fastapi`, `uvicorn`, `sqlalchemy`, `psycopg2-binary` (o `asyncpg`), `alembic`, `playwright`, `pydantic`, `pydantic-settings`, `python-dotenv`, `pyyaml`, `pytest`, `httpx`, `ruff`, `mypy`, `pre-commit`.
+3. `.env.example` y `.gitignore` ya existen en el repo — verificar que cubren todo lo nuevo que se agregue.
+4. `docker-compose.yml` con un servicio `postgres`.
+5. Playwright: `playwright install chromium`.
+
+**Done cuando:** `docker-compose up -d postgres` levanta la base, `python -c "import fastapi, playwright, sqlalchemy"` no falla, y la estructura de carpetas por capas existe vacía.
 
 ---
 
 ## Fase 1 — Base de datos y modelos
 
-1. Definir `app/database/database.py` (engine SQLAlchemy + sesión).
-2. Definir `app/database/models.py` con las tablas: `jobs`, `job_analysis`, `applications` (ver esquema en `CLAUDE.md`). Incluir `content_hash` único en `jobs` para deduplicación desde el inicio.
-3. Configurar Alembic para migraciones (`alembic init`, primera migración con las 3 tablas).
-4. Variables en `.env`: `DATABASE_URL=postgresql://user:pass@localhost:5432/jobs_db`.
-5. Escribir un test simple (`tests/test_database.py`) que abra sesión, inserte un `job` de prueba y lo lea.
+**Agente:** `domain-engineer` (entidades + interfaces de repositorio) → `database-agent` (modelos SQLAlchemy, migraciones).
 
-**Done cuando:** `alembic upgrade head` crea las tablas y el test de inserción/lectura pasa.
+1. `domain-engineer`: entidades `Job`, `JobAnalysis`, `Application` y value objects (`JobId`, `ApplicationId`, `EmailAddress`) en `app/domain/entities/` y `app/domain/value_objects/`; interfaz `JobRepository` (`Protocol`) en `app/domain/repositories/`.
+2. `database-agent`: `app/infrastructure/database/session.py` (engine + sesión SQLAlchemy), `app/infrastructure/database/sqlalchemy_models.py` con las tablas `jobs`, `job_analysis`, `applications` (ver esquema en `CLAUDE.md`), `content_hash` único en `jobs` para deduplicación desde el inicio, e implementación `SQLAlchemyJobRepository` en `app/infrastructure/database/repositories/`.
+3. Alembic (`migrations/`): primera migración con las 3 tablas.
+4. `.env`: `DATABASE_URL=postgresql://user:pass@localhost:5432/jobs_db`.
+5. `testing-agent`: test que abra sesión, inserte un `Job` vía el repositorio y lo lea.
+
+**Done cuando:** `alembic upgrade head` crea las tablas y el test de inserción/lectura pasa contra la interfaz `JobRepository`, no contra SQLAlchemy directamente.
 
 ---
 
 ## Fase 2 — LinkedIn Collector (solo feed)
 
-1. `app/linkedin/browser.py`: función que lanza Playwright (Chromium, `headless=False` al principio para depurar), reutilizando una sesión guardada (`storage_state`) para no tener que hacer login cada vez.
-2. `app/linkedin/login.py`: login con usuario/contraseña desde `.env` (`LINKEDIN_EMAIL`, `LINKEDIN_PASSWORD`), guardando `storage_state.json` tras el primer login exitoso. Manejar el caso de verificación en dos pasos (pausa manual la primera vez).
-3. `app/linkedin/feed_scraper.py`: navegar a `linkedin.com/feed/`, hacer scroll controlado (N veces, con límite configurable), y extraer de cada post visible: autor, texto, timestamp relativo, URL del post si existe. **Regla explícita: nunca hacer `click` en un post ni navegar fuera de `/feed/`.**
-4. `app/linkedin/parser.py`: normalizar el HTML/texto extraído a un dict limpio.
-5. Calcular `content_hash = sha256(normalized_content)` y hacer upsert en `jobs` (si el hash ya existe, ignorar).
-6. Guardar cada post como `status=SCRAPED`.
-7. Exponer un comando manual (`python -m app.linkedin.feed_scraper` o endpoint `POST /scrape`) para correrlo a demanda mientras se desarrolla.
+**Agente:** `linkedin-agent`.
 
-**Done cuando:** correr el scraper una vez guarda N posts nuevos en `jobs`; correrlo de nuevo inmediatamente después no duplica filas (dedup funcionando).
+1. `app/infrastructure/linkedin/browser.py`: lanza Playwright (Chromium), reutilizando `storage_state` para no reautenticar cada vez.
+2. `app/infrastructure/linkedin/session.py`: login inicial manual/controlado, guarda `storage_state.json` (gitignored).
+3. `app/infrastructure/linkedin/feed.py`: navega a `linkedin.com/feed/` con **whitelist explícita de URLs permitidas**, scroll controlado, extrae autor/texto/timestamp/URL de cada post. Nunca `click` en un post ni navegación fuera de `/feed/`.
+4. `app/infrastructure/linkedin/parser.py`: normaliza el HTML/texto a un dict limpio.
+5. `app/infrastructure/linkedin/linkedin_feed_collector.py`: implementa la interfaz `FeedCollector` (definida en domain/application), calcula `content_hash = sha256(normalized_content)` y delega el guardado al `JobRepository` (upsert; si el hash ya existe, ignorar). Guarda cada post como `status=SCRAPED`.
+6. `backend-engineer` (coordinación mínima): expone `POST /scrape` en `app/presentation/api/` que invoca el use case `CollectFeedPosts`, para correrlo a demanda mientras se desarrolla.
 
-⚠️ Antes de automatizar el login, revisar los Términos de Servicio de LinkedIn — este proyecto es para uso personal, sin scraping masivo ni evasión de controles anti-bot.
+**Done cuando:** correr el collector una vez guarda N posts nuevos en `jobs`; correrlo de nuevo inmediatamente después no duplica filas (dedup funcionando), y `FeedCollector` es la única interfaz que el resto de la app conoce (Playwright no se filtra a domain/application).
+
+⚠️ Antes de automatizar el login, revisar los Términos de Servicio de LinkedIn — este proyecto es para uso personal, sin scraping masivo ni evasión de controles anti-bot. `security-agent` debe revisar el manejo de `storage_state.json` antes de dar esta fase por cerrada.
 
 ---
 
 ## Fase 3 — Job Analyzer (LLM)
 
-1. `app/ai/client.py`: wrapper simple sobre la API de OpenAI/Anthropic (API key desde `.env`).
-2. `app/jobs/analyzer.py`: función que recibe el `content` de un job y devuelve JSON estructurado (usar structured output / JSON mode):
-   ```json
-   {"is_job": true, "category": "software_engineering", "seniority": "senior",
-    "skills": ["Java","Spring Boot","Kafka","AWS"], "email": "recruiter@example.com"}
-   ```
-3. Prompt con lista cerrada de categorías (Java, Python, AI/ML, Deep Learning, JavaScript/Node, Go, Elixir, Full Stack, Other).
-4. Guardar el resultado en `job_analysis` y actualizar `jobs.status` a `ANALYZED` o `NOT_RELEVANT` (si `is_job=false`).
-5. Job runner que procese todos los `jobs` en estado `SCRAPED` en batch.
-6. Tests con 4-5 posts de ejemplo (reales, anonimizados) fijos como fixtures, mockeando la llamada al LLM.
+**Agente:** `llm-agent` (+ `domain-engineer` si falta algún campo en la entidad `JobAnalysis`).
 
-**Done cuando:** correr el analyzer sobre los posts scrapeados en Fase 2 llena `job_analysis` correctamente y mueve el `status` de cada job.
+1. `app/infrastructure/llm/openai_provider.py` / `anthropic_provider.py`: implementan la interfaz `LLMProvider` (`Protocol`, definida en domain/application) con el método `analyze_job`.
+2. `prompts/job-analysis/v1.txt`: prompt versionado, con lista cerrada de categorías (Java, Python, AI/ML, Deep Learning, JavaScript/Node, Go, Elixir, Full Stack, Other).
+3. Salida JSON estructurada validada con Pydantic antes de tocar el dominio:
+   ```json
+   {"is_job": true, "job_category": "software_engineering", "seniority": "senior",
+    "skills": ["Java","Spring Boot","Kafka","AWS"], "email_addresses": [], "confidence": 0.93}
+   ```
+4. `application/use_cases/analyze_job_post.py` (`backend-engineer` o `llm-agent`, coordinar): orquesta `LLMProvider` + `JobRepository`, guarda el resultado y mueve `status` a `ANALYZED` o `NOT_RELEVANT`.
+5. Aplica el **Candidate Filter** (reglas baratas por keywords, sin LLM) antes de llamar al proveedor — ver `TOKEN_OPTIMIZATION.md`.
+6. `testing-agent`: tests con `FakeLLMProvider` y 4-5 posts de ejemplo fijos como fixtures — nunca llamar al LLM real en unit tests.
+
+**Done cuando:** correr el analyzer sobre los posts scrapeados en Fase 2 llena `job_analysis` correctamente, respeta el filtro barato antes de gastar tokens, y mueve el `status` de cada job.
 
 ---
 
 ## Fase 4 — CV Matcher
 
-1. Crear `config/cvs.yaml` con el mapeo categoría→archivo→skills (ver ejemplo en `CLAUDE.md`).
-2. Colocar los PDFs reales en `cvs/<categoria>/`.
-3. `app/cv/repository.py`: cargar y parsear `cvs.yaml`.
-4. `app/cv/matcher.py`: dado el `skills` detectado por el analyzer, calcular el CV con mayor intersección de skills (score simple de overlap; empieza con algo tan simple como `len(set(job_skills) & set(cv_skills))`).
-5. Guardar `recommended_cv` en `job_analysis` y mover `status` a `CV_SELECTED`.
-6. Test: dado un job con skills `["Java","Spring Boot"]`, verificar que selecciona el CV de Java y no el de Python.
+**Agente:** `cv-matching-agent`.
 
-**Done cuando:** cada job en `ANALYZED`/`RELEVANT` termina con un `recommended_cv` sensato.
+1. `config/cvs.yaml` (o `app/infrastructure/cv/cvs.yaml`) con el mapeo categoría→archivo→skills.
+2. PDFs reales en `cvs/<categoria>/` (gitignored — ver `.gitignore`).
+3. `app/infrastructure/cv/filesystem_cv_repository.py`: carga y parsea el catálogo.
+4. `app/application/cv/matcher.py`: matching determinístico por intersección de skills normalizadas (`len(set(job_skills) & set(cv_skills))`); fallback semántico opcional vía `LLMProvider` solo si el determinístico es insuficiente.
+5. Guarda `recommended_cv`, `matching_skills`, `missing_skills`, `confidence` en `job_analysis`, mueve `status` a `CV_SELECTED`.
+6. `testing-agent`: dado un job con skills `["Java","Spring Boot"]`, verificar que selecciona el CV de Java y no el de Python.
+
+**Done cuando:** cada job en `ANALYZED`/`RELEVANT` termina con un `recommended_cv` sensato y explicable (skills que hicieron match vs. las que faltan).
 
 ---
 
 ## Fase 5 — Email Generator
 
-1. `app/ai/email_generator.py`: recibe `job_analysis` + texto del CV seleccionado (o un resumen fijo del CV, no hace falta parsear el PDF completo al inicio) y pide al LLM un JSON `{"subject": "...", "body": "..."}`.
-2. Guardar `subject`/`generated_email` en `job_analysis`, mover `status` a `EMAIL_GENERATED`.
-3. Test con fixture, mockeando el LLM, verificando que el JSON parseado tiene las claves esperadas.
+**Agente:** `llm-agent` (usa el resumen de CV que provee `cv-matching-agent`, no el PDF completo).
 
-**Done cuando:** para un job en `CV_SELECTED`, se genera subject+body coherente y queda persistido.
+1. `app/infrastructure/llm/*_provider.py`: método `generate_email` de la interfaz `LLMProvider`.
+2. `prompts/email-generation/v1.txt`: prompt versionado — no inventar experiencia/tecnologías/empresas que no estén en el CV.
+3. `application/use_cases/generate_application_email.py`: recibe `job_analysis` + resumen del CV seleccionado, pide `{"subject": "...", "body": "..."}` estructurado, guarda en `job_analysis`/`applications`, mueve `status` a `EMAIL_GENERATED`.
+4. `testing-agent`: test con `FakeLLMProvider`, verificando que el JSON parseado tiene las claves esperadas.
+
+**Done cuando:** para un job en `CV_SELECTED`, se genera subject+body coherente y queda persistido, sin inventar información fuera del CV.
 
 ---
 
 ## Fase 6 — API + Dashboard (revisión manual)
 
-1. `app/api/routes/jobs.py`: endpoints `GET /jobs` (listado con filtro por status), `GET /jobs/{id}`, `POST /jobs/{id}/ignore` (marca `NOT_RELEVANT` manualmente).
-2. `POST /scrape`, `POST /jobs/{id}/analyze`, `POST /jobs/{id}/generate-email` — para disparar cada etapa manualmente desde la UI mientras no hay scheduler.
-3. Frontend mínimo (puede ser HTML+JS simple primero, React después): lista de jobs nuevos con skills, CV recomendado, botón "Generate Email", vista previa de subject/body editable.
-4. Permitir editar manualmente el subject/body generado antes de crear el draft (guardar la edición en `applications`).
+**Agente:** `backend-engineer` (API) + `frontend-agent` (UI).
+
+1. `backend-engineer` — `app/presentation/api/routes/jobs.py`: `GET /api/jobs` (con filtro por status y paginación), `GET /api/jobs/{id}`, `POST /api/jobs/{id}/ignore`, `POST /api/jobs/{id}/analyze`, `POST /api/jobs/{id}/generate-email`. DTOs de request/response en `app/application/dto/`, nunca exponer entidades de dominio directamente.
+2. `frontend-agent` — `frontend/`: lista de jobs nuevos con skills, CV recomendado y explicación del match, botón "Generate Email", vista previa de subject/body editable.
+3. Permitir editar manualmente el subject/body generado antes de crear el draft (guardar la edición en `applications` vía la API, no en el cliente).
 
 **Done cuando:** desde el navegador se puede ver un job, su CV recomendado, generar/editar el email y ver el preview — sin tocar la base de datos a mano.
 
@@ -98,23 +117,27 @@ Cada fase tiene un entregable verificable ("Done cuando..."). No pasar a la sigu
 
 ## Fase 7 — Gmail integration (Drafts)
 
-1. Crear credenciales OAuth 2.0 en Google Cloud Console (Gmail API habilitada), descargar `credentials.json`.
-2. `app/gmail/auth.py`: flujo OAuth (guarda `token.json` tras primera autorización).
-3. `app/gmail/drafts.py`: función que crea un **draft** (no envía) con `to`, `subject`, `body` y el PDF del CV adjunto (base64 MIME multipart).
-4. Endpoint `POST /jobs/{id}/create-draft` → llama a `drafts.py`, guarda `gmail_draft_id` en `applications`, mueve `status` a `DRAFT_CREATED`.
-5. En el dashboard, botón "Create Draft" y luego "Abrir en Gmail" (link directo al draft) para que el usuario haga `Send` manualmente.
-6. **No implementar envío automático (`users.messages.send`) en esta fase.** Si más adelante se quiere, debe ser una acción explícita y separada, nunca la ruta por defecto.
+**Agente:** `gmail-agent`.
 
-**Done cuando:** al presionar "Create Draft" aparece el draft real en Gmail con el CV adjunto, listo para revisión y envío manual.
+1. Credenciales OAuth 2.0 en Google Cloud Console (Gmail API habilitada), `credentials.json` (gitignored).
+2. `app/infrastructure/gmail/gmail_client.py`: flujo OAuth, guarda `token.json` (gitignored) tras primera autorización.
+3. `app/infrastructure/gmail/gmail_draft_repository.py`: implementa `EmailDraftRepository`, crea un **draft** (no envía) con `to`, `subject`, `body` y el PDF del CV adjunto.
+4. `backend-engineer` (coordinación): `POST /api/jobs/{id}/create-draft` invoca el use case `CreateGmailDraft`, guarda `gmail_draft_id` en `applications`, mueve `status` a `DRAFT_CREATED`.
+5. `frontend-agent`: botón "Create Draft" y "Abrir en Gmail" (link directo al draft) para que el usuario haga `Send` manualmente.
+6. **No implementar envío automático (`users.messages.send`) en esta fase.** Si más adelante se quiere, es una acción explícita y separada — requiere confirmación del usuario antes de que `gmail-agent` la implemente.
+
+**Done cuando:** al presionar "Create Draft" aparece el draft real en Gmail con el CV adjunto, listo para revisión y envío manual. `security-agent` debe revisar los scopes de OAuth (least privilege) y el manejo de `token.json` antes de cerrar esta fase.
 
 ---
 
 ## Fase 8 — Estado `SENT` y trazabilidad
 
-1. Como el envío final es manual en Gmail, el sistema no puede saber automáticamente cuándo se envió — dos opciones:
-   - Opción simple: botón manual "Mark as Sent" en el dashboard que actualiza `status=SENT` y `sent_at=now()`.
-   - Opción avanzada (opcional, fase posterior): usar `users.drafts.get`/`users.messages.list` para detectar que el draft ya no existe como draft (fue enviado).
-2. Vista de histórico/tablero: jobs por estado, aplicaciones enviadas por semana, por categoría.
+**Agente:** `backend-engineer` (use case + endpoint) + `frontend-agent` (vista de histórico).
+
+1. Como el envío final es manual en Gmail, el sistema no puede saber automáticamente cuándo se envió:
+   * Opción simple (recomendada para el MVP): botón "Mark as Sent" → `POST /api/applications/{id}/mark-sent` actualiza `status=SENT` y `sent_at=now()`.
+   * Opción avanzada (fase posterior, no MVP): usar `users.drafts.get`/`users.messages.list` para detectar que el draft ya no existe (fue enviado) — la implementaría `gmail-agent`.
+2. `frontend-agent`: vista de histórico/tablero — jobs por estado, aplicaciones enviadas por semana, por categoría.
 
 **Done cuando:** se puede ver de un vistazo cuántas ofertas están en cada estado y cuántas aplicaciones se han enviado.
 
@@ -122,39 +145,44 @@ Cada fase tiene un entregable verificable ("Done cuando..."). No pasar a la sigu
 
 ## Fase 9 — Scheduler
 
-1. `app/scheduler/jobs.py` con APScheduler: job diario (ej. 08:00) que corre `scrape → analyze → match CV → generate email` en secuencia, dejando todo en `EMAIL_GENERATED` listo para revisión humana (nunca crea drafts ni envía automáticamente sin pasar por Fase 6/7 manualmente, salvo que el usuario decida lo contrario explícitamente).
-2. Logging claro de cada corrida (cuántos posts nuevos, cuántos relevantes, errores).
-3. Notificación simple opcional (email a uno mismo, o log a archivo) resumiendo la corrida.
+**Agente:** `backend-engineer` — el scheduler es un punto de entrada más (como la API), driven por tiempo en vez de HTTP, así que vive junto a `app/presentation/**` bajo su ownership.
 
-**Done cuando:** dejar la app corriendo produce, sin intervención, una bandeja de jobs `EMAIL_GENERATED` lista para revisar al día siguiente.
+1. `app/presentation/scheduler/jobs.py` con APScheduler: job diario (ej. 08:00) que invoca en secuencia los use cases ya existentes (`CollectFeedPosts → AnalyzeJobPost → SelectCV → GenerateApplicationEmail`), dejando todo en `EMAIL_GENERATED` listo para revisión humana. **Nunca** crea drafts ni envía automáticamente sin pasar por Fase 6/7 manualmente, salvo que el usuario decida lo contrario explícitamente.
+2. Logging estructurado de cada corrida (posts nuevos, relevantes, errores) — sin secretos.
+3. Notificación simple opcional (log a archivo, o email a uno mismo) resumiendo la corrida.
+
+**Done cuando:** dejar la app corriendo produce, sin intervención, una bandeja de jobs `EMAIL_GENERATED` lista para revisar al día siguiente — reutilizando los mismos use cases de las fases 2-5, no lógica duplicada.
 
 ---
 
 ## Fase 10 — Tests, Docker y CI/CD
 
-1. Cobertura de tests: dedup, analyzer (mockeado), matcher, email generator (mockeado), endpoints principales con `httpx`/`TestClient`.
-2. `Dockerfile` para la app + `docker-compose.yml` completo (app + postgres).
-3. GitHub Actions: workflow que en cada push corra `pytest` y build de la imagen Docker.
-4. `README.md` con instrucciones reales de instalación, variables de entorno necesarias y cómo correr cada fase.
+**Agente:** `testing-agent` (cobertura) + `orchestrator` (Docker/CI — tooling de repo, no pertenece a ninguna capa de arquitectura, así que no tiene un agente de capa dedicado).
+
+1. `testing-agent`: cerrar huecos de cobertura — dedup, analyzer (mockeado), matcher, email generator (mockeado), endpoints principales con `httpx`/`TestClient`, y al menos un test de integración real contra PostgreSQL.
+2. `orchestrator`: `Dockerfile` para la app + `docker-compose.yml` completo (app + postgres); GitHub Actions (`.github/workflows/ci.yml`) que en cada push corra `ruff`, `mypy`, `pytest` y build de la imagen Docker.
+3. `README.md` con instrucciones reales de instalación, variables de entorno necesarias y cómo correr cada fase.
 
 **Done cuando:** `docker-compose up` levanta todo el sistema desde cero en una máquina limpia, y el CI pasa en verde.
 
 ---
 
-## Orden recomendado de trabajo (resumen)
+## Orden recomendado de ejecución (resumen)
 
 ```
-Fase 0  Setup
-Fase 1  DB + modelos
-Fase 2  LinkedIn Collector (feed only) + dedup
-Fase 3  Job Analyzer (LLM)
-Fase 4  CV Matcher
-Fase 5  Email Generator (LLM)
-Fase 6  API + Dashboard de revisión
-Fase 7  Gmail Drafts + adjunto CV
-Fase 8  Estado SENT + trazabilidad
-Fase 9  Scheduler (automatiza 2→5, deja todo listo para revisión)
-Fase 10 Tests + Docker + CI/CD
+Fase 0  Setup                        → architect → orchestrator
+Fase 1  DB + modelos                 → domain-engineer → database-agent
+Fase 2  LinkedIn Collector + dedup   → linkedin-agent
+Fase 3  Job Analyzer (LLM)           → llm-agent
+Fase 4  CV Matcher                   → cv-matching-agent
+Fase 5  Email Generator (LLM)        → llm-agent
+Fase 6  API + Dashboard              → backend-engineer + frontend-agent
+Fase 7  Gmail Drafts + adjunto CV    → gmail-agent
+Fase 8  Estado SENT + trazabilidad   → backend-engineer + frontend-agent
+Fase 9  Scheduler                    → backend-engineer
+Fase 10 Tests + Docker + CI/CD       → testing-agent + orchestrator
 ```
+
+Transversales en cada fase: `testing-agent`, `code-reviewer` (obligatorio al terminar cada agente), `security-agent` (especialmente Fases 2 y 7), `token-optimization-agent` (desde Fase 3).
 
 Cada fase es usable de forma standalone antes de continuar — esto permite validar con datos reales de tu propio LinkedIn en cada paso en vez de construir todo a ciegas.

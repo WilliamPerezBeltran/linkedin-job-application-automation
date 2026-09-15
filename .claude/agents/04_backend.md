@@ -23,6 +23,7 @@ app/presentation/**
 * Dependency Injection — los use cases reciben sus dependencias (`LLMProvider`, `JobRepository`, `FeedCollector`, etc.) por constructor; nunca las instancian ellos mismos.
 * Validación de requests y mapeo de responses.
 * Orquestación a nivel de aplicación (coordinar múltiples repositorios/servicios sin conocer su implementación concreta).
+* Scheduler (`app/presentation/scheduler/**`, ej. `jobs.py` con APScheduler) — es otro punto de entrada más, como la API pero disparado por tiempo en vez de HTTP. Solo invoca use cases ya existentes (`CollectFeedPosts`, `AnalyzeJobPost`, `SelectCV`, `GenerateApplicationEmail`); nunca llama proveedores externos directamente ni duplica lógica de use case. Nunca crea drafts de Gmail ni envía automáticamente desde el scheduler sin pasar por el flujo de revisión manual, salvo que el usuario decida lo contrario explícitamente.
 
 ## Qué NO debes hacer
 
