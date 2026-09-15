@@ -1,0 +1,47 @@
+# Secrets / credentials — nunca en git
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials.json
+token.json
+oauth_tokens/
+sessions/
+storage_state.json
+
+# Datos locales / generados
+storage/
+logs/
+*.log
+data/
+*.db
+*.sqlite3
+
+# CVs personales (contienen datos personales; el catálogo/mapeo sí se versiona vía config/cvs.yaml)
+cvs/**
+!cvs/**/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/build/
+
+# Playwright
+playwright-report/
+test-results/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
