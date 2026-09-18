@@ -1,0 +1,84 @@
+# config/cvs.yaml
+#
+# Catálogo de CVs del usuario, uno por categoría/stack. Formato base definido
+# en CLAUDE.md ("Configuración de CVs"): cada entrada tiene `file` (ruta al
+# PDF, relativa a la raíz del repo) y `skills` (lista de tecnologías que ese
+# CV cubre). `app/application/cv/matcher.py` (Fase 4, CV Matcher) cruza estas
+# `skills` -- normalizadas -- contra las `skills`/`languages`/`frameworks`
+# detectadas por el Job Analyzer (Fase 3) para recomendar un CV, nunca solo
+# por el nombre de la categoría.
+#
+# Campo `summary` -- NUEVO respecto al ejemplo de CLAUDE.md, agregado en esta
+# Fase 4 por el CV Matching Agent:
+#   Resumen corto (3-5 líneas) ya redactado de cada CV, para que la Fase 5
+#   (Email Generator, `llm-agent`) lo use como `EmailContext.cv_summary` en
+#   vez de mandar el PDF completo al LLM en cada oferta -- ver
+#   TOKEN_OPTIMIZATION.md §7 ("mantener en config/cvs.yaml... un resumen
+#   corto ya redactado de cada CV... se escribe una sola vez, no se regenera
+#   por cada oferta"). `app/infrastructure/cv/filesystem_cv_repository.py`
+#   expone `get_summary(cv_id)` para resolver este campo sin tocar el PDF.
+#
+# IMPORTANTE -- placeholders (ver también cvs/**/*.pdf.placeholder):
+#   Los archivos referenciados en `file` bajo `cvs/<categoria>/` son
+#   PLACEHOLDERS de texto plano, NO CVs reales -- el usuario los tiene que
+#   reemplazar con sus propios CVs en PDF. `.gitignore` ignora todo
+#   `cvs/**` salvo `.gitkeep` y `*.placeholder` (esos sí se versionan porque
+#   no contienen datos personales; un CV real nunca debe subirse a git). El
+#   texto de `summary` de abajo es genérico/de ejemplo -- personalizalo con
+#   el contenido real de cada CV antes de generar emails de postulación
+#   reales, para no arriesgarse a que el Email Generator (Fase 5) hable de
+#   experiencia que el candidato no tiene.
+
+cvs:
+  java:
+    file: cvs/java/william-java.pdf.placeholder
+    skills: [Java, Spring Boot, Kafka, Microservices, SQL, Docker]
+    summary: >
+      Backend engineer con experiencia en Java y el ecosistema Spring
+      (Spring Boot, Spring Data). Ha construido microservicios productivos
+      con mensajería basada en Kafka, persistencia SQL y despliegues
+      containerizados con Docker. Cómodo trabajando en equipos ágiles con
+      integración continua.
+
+  python:
+    file: cvs/python/william-python.pdf.placeholder
+    skills: [Python, FastAPI, Django, PostgreSQL, REST APIs]
+    summary: >
+      Backend engineer especializado en Python, con experiencia
+      construyendo APIs REST sobre FastAPI y Django, integradas con
+      PostgreSQL. Experiencia con testing automatizado (pytest) y
+      arquitecturas orientadas a servicios.
+
+  ai:
+    file: cvs/ai/william-ai.pdf.placeholder
+    skills: [Python, LLM, RAG, Machine Learning, PyTorch, NLP]
+    summary: >
+      Ingeniero de IA/ML con experiencia en Python aplicado a Machine
+      Learning y NLP, incluyendo integración de LLMs (RAG, prompt
+      engineering) y modelos con PyTorch. Experiencia llevando modelos
+      desde investigación a producción.
+
+  frontend:
+    file: cvs/frontend/william-fullstack.pdf.placeholder
+    skills: [JavaScript, TypeScript, Node.js, React, HTML, CSS]
+    summary: >
+      Desarrollador Full Stack con foco en JavaScript/TypeScript: interfaces
+      con React en el frontend y APIs con Node.js en el backend. Experiencia
+      end-to-end en features de producto, desde la UI hasta el servicio que
+      la sirve.
+
+  go:
+    file: cvs/go/william-go.pdf.placeholder
+    skills: [Go, Golang, gRPC, Microservices]
+    summary: >
+      Backend engineer con experiencia en Go para servicios de alto
+      rendimiento y baja latencia, incluyendo comunicación entre servicios
+      vía gRPC y despliegue de microservicios en producción.
+
+  elixir:
+    file: cvs/elixir/william-elixir.pdf.placeholder
+    skills: [Elixir, Phoenix, Erlang, OTP]
+    summary: >
+      Backend engineer con experiencia en Elixir/Phoenix para sistemas
+      concurrentes y tolerantes a fallos sobre la VM de Erlang (OTP).
+      Experiencia con APIs en tiempo real y sistemas distribuidos.

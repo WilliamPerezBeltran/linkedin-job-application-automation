@@ -1,0 +1,20 @@
+PLACEHOLDER — este archivo NO es un CV real.
+
+Reemplazalo por tu CV real en PDF para la categoría "go" antes de usar el
+sistema con datos reales (Fase 7, adjunto de Gmail).
+
+Pasos para reemplazarlo:
+1. Borrá este archivo y copiá tu CV real como `cvs/go/william-go.pdf`
+   (o el nombre que prefieras).
+2. Actualizá el campo `file` de la entrada `go` en `config/cvs.yaml` para
+   que apunte al nombre real (ya no `.pdf.placeholder`).
+3. Reescribí el campo `summary` de esa misma entrada con contenido real de
+   tu CV — nunca dejes que un LLM invente experiencia que no esté ahí
+   (ver TOKEN_OPTIMIZATION.md §7 y docs/agents/AGENTS.md sección 11).
+
+Este archivo existe únicamente para que
+`app/infrastructure/cv/filesystem_cv_repository.py` pueda validar en
+desarrollo/tests locales que el `file` referenciado en `config/cvs.yaml`
+existe en disco, sin necesitar tu CV real todavía. Está versionado en git
+a propósito (ver `.gitignore`, excepción para `*.placeholder`) porque no
+contiene ningún dato personal.
