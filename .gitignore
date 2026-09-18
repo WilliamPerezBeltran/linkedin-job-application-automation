@@ -9,6 +9,12 @@ token.json
 oauth_tokens/
 sessions/
 storage_state.json
+# Directorio montado por docker-compose.yml (servicios app/scheduler) para
+# credentials.json/token.json/storage_state.json dentro del contenedor --
+# ver comentario de docker-compose.yml sobre por qué es un directorio y no
+# archivos individuales. Ya cubiertos arriba por nombre, pero el propio
+# directorio también se ignora explícitamente por claridad.
+secrets/
 
 # Datos locales / generados
 storage/
@@ -19,8 +25,25 @@ data/
 *.sqlite3
 
 # CVs personales (contienen datos personales; el catálogo/mapeo sí se versiona vía config/cvs.yaml)
-cvs/**
-!cvs/**/.gitkeep
+# Excepción: *.placeholder (Fase 4, cv-matching-agent) -- archivos de texto
+# plano sin datos personales que documentan explícitamente "reemplazar por
+# el CV real"; existen para que app/infrastructure/cv/filesystem_cv_repository.py
+# pueda validar en desarrollo/tests que el `file` de config/cvs.yaml existe
+# en disco antes de que el usuario suba sus CVs reales. config/cvs.yaml en
+# sí vive fuera de cvs/** y nunca se ve afectado por esta regla.
+#
+# Nota técnica: no se puede usar un simple `cvs/**` + negación, porque git
+# nunca desciende a un directorio ya marcado como ignorado (no puede
+# "reincluir" un archivo cuyo directorio padre está excluido) -- por eso acá
+# se ignoran primero los *archivos* directos de cada subcarpeta de cvs/ y
+# recién después se reincluyen `.gitkeep`/`*.placeholder`, dejando que git
+# sí explore cada `cvs/<categoria>/`.
+cvs/*
+!cvs/.gitkeep
+!cvs/*/
+cvs/*/*
+!cvs/*/.gitkeep
+!cvs/*/*.placeholder
 
 # Python
 __pycache__/
@@ -31,6 +54,11 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
 
 # Node / frontend
 node_modules/

@@ -1,0 +1,56 @@
+# Ver Dockerfile — nunca se copian secretos ni artefactos locales a la imagen.
+
+.git/
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+
+# Tests (no hacen falta en la imagen de runtime)
+tests/
+
+# Frontend (se construye/sirve por separado, no dentro de esta imagen)
+frontend/
+
+# Secretos / credenciales — nunca en la imagen
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials.json
+token.json
+oauth_tokens/
+sessions/
+storage_state.json
+
+# CVs personales y datos locales
+cvs/*
+!cvs/.gitkeep
+data/
+storage/
+logs/
+*.log
+*.db
+*.sqlite3
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Docs (no aportan a la imagen de runtime)
+docs/
+*.md

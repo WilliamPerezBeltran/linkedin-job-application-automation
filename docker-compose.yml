@@ -1,0 +1,119 @@
+# Fase 10 (ROADMAP.md, "Tests, Docker y CI/CD"): extiende el
+# `docker-compose.yml` de Fase 0 (solo `postgres`) con la app (API +
+# dashboard) y el scheduler, sin romper el servicio `postgres` ya existente.
+# Ownership: `orchestrator` (tooling de repo, ver docs/agents/AGENTS.md
+# sección 18).
+#
+# `app` y `scheduler` comparten la misma imagen (`build: .`, este
+# `Dockerfile`) -- son el mismo código, solo cambia el `command` (ver
+# docstring de `app/presentation/scheduler/jobs.py`, sección "Arranque de
+# los dos procesos": nunca deben correr en el mismo proceso). El servicio
+# `scheduler` es opcional -- `docker compose up app postgres` alcanza para
+# usar solo la API + dashboard sin el pipeline automático diario.
+#
+# `DATABASE_URL` se sobreescribe explícitamente para ambos servicios
+# apuntando al hostname de red interna `postgres` (resuelto por Docker
+# Compose) en el puerto interno `5432` -- distinto del `DATABASE_URL` que
+# `.env` define para uso *fuera* de Docker (`localhost:${POSTGRES_PORT}`,
+# ver README.md), que no es resoluble desde dentro de un contenedor.
+#
+# Variables sensibles (`ANTHROPIC_API_KEY`, `LINKEDIN_EMAIL`/`PASSWORD`,
+# etc.) se heredan del `.env` del host vía `env_file`, nunca hardcodeadas
+# acá -- `docker compose` ya carga `.env` automáticamente para interpolar
+# `${...}` en este archivo, y `env_file` además las inyecta como variables
+# de entorno reales dentro de los contenedores `app`/`scheduler`.
+#
+# Secretos locales (`credentials.json`/`token.json`/`storage_state.json`,
+# todos gitignored) se montan como un **directorio** (`./secrets`), no como
+# archivos individuales: montar un archivo que todavía no existe en el host
+# hace que Docker lo cree como un directorio vacío en su lugar (gotcha
+# conocido de bind mounts), lo que rompería `docker compose up` en una
+# máquina limpia antes de que el usuario complete el setup manual de Gmail/
+# LinkedIn (ver README.md). Montar el directorio completo evita ese
+# problema -- `./secrets/` se crea vacío sin sorpresas, y la app reporta el
+# error real y esperado (`GmailCredentialsNotFoundError`, sesión de
+# LinkedIn no inicializada) si el usuario todavía no puso los archivos
+# reales ahí. `GMAIL_CREDENTIALS_PATH`/`GMAIL_TOKEN_PATH`/
+# `LINKEDIN_STORAGE_STATE_PATH` se sobreescriben para apuntar dentro de ese
+# directorio montado (los defaults de esas variables, ver `.env.example`,
+# asumen la raíz del repo, que fuera de Docker es donde el usuario ya
+# guarda estos archivos hoy).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: linkedin-job-automation-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-jobs_db}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-jobs_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: linkedin-job-automation-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-jobs_db}
+      GMAIL_CREDENTIALS_PATH: /app/secrets/credentials.json
+      GMAIL_TOKEN_PATH: /app/secrets/token.json
+      LINKEDIN_STORAGE_STATE_PATH: /app/secrets/storage_state.json
+    ports:
+      - "8000:8000"
+    volumes:
+      # CVs reales del usuario (gitignored, ver .gitignore) y catálogo --
+      # montados de solo lectura para que `docker compose up` los use sin
+      # tener que reconstruir la imagen cada vez que cambian.
+      - ./cvs:/app/cvs:ro
+      - ./config:/app/config:ro
+      # Secretos locales -- directorio completo, ver comentario del
+      # encabezado de este archivo sobre por qué no se montan como archivos
+      # individuales. Lectura/escritura (no `:ro`): la app necesita poder
+      # persistir `token.json` tras el primer consentimiento OAuth.
+      - ./secrets:/app/secrets
+    # Corre las migraciones pendientes antes de servir la API -- evita el
+    # paso manual "acordate de correr alembic upgrade head" al levantar el
+    # stack completo desde cero en una máquina limpia (ROADMAP.md Fase 10,
+    # "Done cuando: docker-compose up levanta todo el sistema desde cero").
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+  scheduler:
+    build: .
+    container_name: linkedin-job-automation-scheduler
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-jobs_db}
+      GMAIL_CREDENTIALS_PATH: /app/secrets/credentials.json
+      GMAIL_TOKEN_PATH: /app/secrets/token.json
+      LINKEDIN_STORAGE_STATE_PATH: /app/secrets/storage_state.json
+    volumes:
+      - ./cvs:/app/cvs:ro
+      - ./config:/app/config:ro
+      - ./secrets:/app/secrets
+    # No corre `alembic upgrade head` acá también -- el servicio `app` ya lo
+    # hace al arrancar, y correrlo dos veces en paralelo contra la misma
+    # base al hacer `docker compose up` es innecesario (Alembic es
+    # idempotente si ya está al día, pero evitamos la carrera de todas
+    # formas dejando un único responsable de migrar).
+    command: ["python", "-m", "app.presentation.scheduler.jobs"]
+
+volumes:
+  postgres_data:
