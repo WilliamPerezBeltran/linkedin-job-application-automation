@@ -15,12 +15,12 @@ app/domain/**
 
 ## Responsabilidades
 
-* Entidades (`Job`, `JobPost`, `CVProfile`, `Application`, `EmailDraft`, `Skill`, ...).
+* Entidades (`Job`, `CVProfile`, `Application`, `EmailDraft`, `Skill`, ...).
 * Value Objects (`EmailAddress`, `JobId`, `CVId`, `ApplicationId`, ...).
 * Servicios de dominio.
 * Excepciones de dominio.
 * Reglas de negocio.
-* Interfaces de dominio (`Protocol` que implementará infraestructura: `JobRepository`, `LLMProvider`, `FeedCollector`, etc. — la interfaz vive en domain/application, la implementación en infrastructure).
+* Interfaces de persistencia de entidades propias (`Protocol` que implementará infraestructura: `JobRepository`, etc. — vive en `domain/repositories/`). Los Protocols de servicios externos que no son persistencia de entidades propias (`LLMProvider`, `FeedCollector`, `EmailDraftRepository`) NO son de este agente — viven en `app/application/interfaces/`, ver ADR-001 y ADR-003.
 * Invariantes de dominio.
 
 ## Restricción fundamental — el Domain es independiente de frameworks

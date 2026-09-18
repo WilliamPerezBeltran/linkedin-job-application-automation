@@ -144,8 +144,7 @@ dentro de una entidad de dominio.
 Ejemplo correcto:
 
 ```python
-class Job:
-    ...
+class Job: ...
 ```
 
 y la persistencia se implementa fuera del dominio.
@@ -271,12 +270,7 @@ Ejemplo:
 
 ```python
 class AnalyzeJobUseCase:
-    def __init__(
-        self,
-        analyzer: JobAnalyzer,
-        repository: JobRepository
-    ):
-        ...
+    def __init__(self, analyzer: JobAnalyzer, repository: JobRepository): ...
 ```
 
 No:
@@ -297,7 +291,6 @@ Ejemplos:
 
 ```text
 Job
-JobPost
 CVProfile
 Application
 EmailDraft
@@ -441,15 +434,11 @@ Ejemplo:
 
 ```python
 class JobRepository(Protocol):
+    def save(self, job: Job) -> Job: ...
 
-    def save(self, job: Job) -> Job:
-        ...
+    def find_by_hash(self, content_hash: str) -> Job | None: ...
 
-    def find_by_hash(self, content_hash: str) -> Job | None:
-        ...
-
-    def find_pending(self) -> list[Job]:
-        ...
+    def find_pending(self) -> list[Job]: ...
 ```
 
 La implementación:
@@ -595,13 +584,14 @@ Validar todos los paths de CV.
 
 LinkedIn debe ser tratado como un sistema externo no confiable.
 
-Crear una interfaz:
+Crear una interfaz (firma fijada en ADR-003, `docs/decisions/003-feed-collector-interface.md`):
 
 ```python
 class FeedCollector(Protocol):
-    def collect(self) -> list[JobPost]:
-        ...
+    def collect(self) -> list[RawFeedPost]: ...
 ```
+
+`RawFeedPost` es un DTO en `app/application/dto/raw_feed_post.py` — `linkedin-agent` nunca construye ni devuelve `Job` directamente (ver ADR-003).
 
 Playwright será solamente una implementación.
 

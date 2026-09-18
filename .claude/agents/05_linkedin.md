@@ -51,13 +51,14 @@ Su única responsabilidad es obtener publicaciones y devolver datos estructurado
 * Preferir sesión persistente de navegador (`storage_state`) o autenticación manual sobre volver a autenticar con credenciales guardadas en cada corrida.
 * Respeta los Términos de Servicio de LinkedIn aplicables: incluye límites de frecuencia (rate limiting) y mecanismos de parada ante errores, cambios inesperados del sitio, o señales de bloqueo/captcha. Nunca implementes evasión de detección de automatización.
 
-## Interfaz esperada (implementada en esta capa, definida en domain/application)
+## Interfaz esperada (definida en `app/application/interfaces/feed_collector.py`, ver ADR-003 en `docs/decisions/003-feed-collector-interface.md`)
 
 ```python
 class FeedCollector(Protocol):
-    def collect(self) -> list[JobPost]:
-        ...
+    def collect(self) -> list[RawFeedPost]: ...
 ```
+
+`RawFeedPost` es un DTO plano (`app/application/dto/raw_feed_post.py`), no la entidad de dominio `Job`. Nunca devuelvas ni construyas `Job` desde esta capa, ni importes `JobRepository` — el use case `CollectFeedPosts` (ownership de `backend-engineer`) es quien construye `Job` a partir de `RawFeedPost` y hace el upsert/dedup contra `JobRepository`.
 
 Playwright es solo una implementación concreta de esta interfaz — nunca debe filtrarse hacia `domain/` o `application/`.
 
