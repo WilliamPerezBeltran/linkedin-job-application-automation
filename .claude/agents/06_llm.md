@@ -29,11 +29,9 @@ prompts/**
 
 ```python
 class LLMProvider(Protocol):
-    def analyze_job(self, content: str) -> JobAnalysis:
-        ...
+    def analyze_job(self, content: str) -> JobAnalysis: ...
 
-    def generate_email(self, context: EmailContext) -> GeneratedEmail:
-        ...
+    def generate_email(self, context: EmailContext) -> GeneratedEmail: ...
 ```
 
 Implementaciones concretas: `OpenAIProvider`, `AnthropicProvider`. El resto de la aplicación (use cases en `application/`) depende de la abstracción `LLMProvider`, nunca directamente del SDK de OpenAI o Anthropic.

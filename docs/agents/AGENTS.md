@@ -388,12 +388,9 @@ Example:
 
 ```python
 class LLMProvider(Protocol):
+    def analyze_job(self, content: str) -> JobAnalysis: ...
 
-    def analyze_job(self, content: str) -> JobAnalysis:
-        ...
-
-    def generate_email(self, context: EmailContext) -> GeneratedEmail:
-        ...
+    def generate_email(self, context: EmailContext) -> GeneratedEmail: ...
 ```
 
 ## Implementations
